@@ -40,7 +40,6 @@ add_executable(pico2_rx
     src/lcd.c
 )
 
-add_subdirectory(rpipico-lcd)
 
 pico_set_program_name(pico2_rx "pico2_rx")
 pico_set_program_version(pico2_rx "0.1")

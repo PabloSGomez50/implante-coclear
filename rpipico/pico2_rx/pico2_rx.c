@@ -11,8 +11,11 @@
 
 #define I2C_PORT    i2c_default
 #define LCD_ADDR    0x27 
+#define LCD_ON      0
 #define SDA_GPIO    4
 #define SCL_GPIO    5
+
+#define LED_PIN_1   2
 
 /**
  * @brief Cantidad de microsegundos de ancho de pulso
@@ -65,68 +68,93 @@ int main(void) {
     gpio_init(RX_GPIO);
     gpio_set_dir(RX_GPIO, false);
     gpio_pull_down(RX_GPIO);
+
+    gpio_init(LED_PIN_1);
+    gpio_set_dir(LED_PIN_1, GPIO_OUT);
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
     // Habilito interrupcion por flanco ascendente y descendente
     gpio_set_irq_enabled_with_callback(RX_GPIO, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, gpio_rx_irq_cb);
 
     // I2C & LCD
+    #if LCD_ON
     init_default_i2c(100);
     lcd_init(I2C_PORT, LCD_ADDR);
     // Limpia la pantalla
     lcd_clear();
     lcd_set_cursor(1, 0);
     lcd_string("Esperando ...   ");
-
+    // Variable para mostrar en lcd
+    char text_data[MAX_CHARS + 1] = "";
+    char aux_buffer[MAX_CHARS + 1] = "";
+    #endif
     // Variable para armar la trama de datos
     uint16_t data = 0;
     // Contador para armar la trama
     uint8_t counter = 0;
-    // Variable para mostrar en lcd
-    char text_data[MAX_CHARS + 1] = "";
-    char aux_buffer[MAX_CHARS + 1] = "";
+    uint8_t last_counter = 0;
+    bool state = false;
+    gpio_put(LED_PIN_1, state);
+
 
     while (true) {
 
         // Avanzo cuando la interrupcion haya capturado el bit
         if(bit_captured) {
             // Evaluo que ancho de pulso es
+            printf("DC: %i", duty_us);
             switch(duty_us) {
 
                 case DUTY_BIT_ZERO:
                     // Si es un cero, solo paso al siguiente bit
-                    text_data[counter] = '0';
                     counter++;
+                    #if LCD_ON
+                    text_data[counter] = '0';
                     lcd_set_cursor(0, 0);
                     lcd_string("Leyendo ...     ");
+                    #endif
                     break;
             
                 case DUTY_BIT_ONE:
                     // Si es un uno, lo agrego a la trama
-                    text_data[counter] = '1';
                     data |= 1 << (15 - counter++);
+                    #if LCD_ON
+                    text_data[counter] = '1';
                     lcd_set_cursor(0, 0);
                     lcd_string("Leyendo ...     "); 
+                    #endif
                     break;
 
                 case DUTY_NO_BIT:
                     // Cuando no hay bit para analizar, se limpia
                     data = 0;
                     counter = 0;
+                    #if LCD_ON
                     lcd_set_cursor(1, 0);
                     lcd_string("Esperando ...   ");
+                    #endif
                     break;
 
                 default:
                     break;
             }
 
+            if(counter != last_counter) {
+                gpio_put(LED_PIN_1, !state);
+                state = !state;
+                last_counter = counter;
+            }
             // Veo si termino la trama
             if(counter == 16) {
+                gpio_put(PICO_DEFAULT_LED_PIN, true);
+                #if LCD_ON
                 lcd_set_cursor(0, 0);
                 sprintf(aux_buffer, "Valor: 0x%X", data);
                 printf(aux_buffer);
                     
                 lcd_set_cursor(1, 0);
                 lcd_string(text_data);
+                #endif
             }
 
             // Espero el proximo bit
